@@ -27,8 +27,6 @@ from transformer_heads.constants import model_type_map
 from safetensors.torch import load_file
 
 
-
-# Patch 1: Fix crash in transformer_heads (EosTokenCriteria)
 if not hasattr(sc_mod, "EosTokenCriteria"):
     from transformers.generation.stopping_criteria import StoppingCriteria
     class EosTokenCriteria(StoppingCriteria):
