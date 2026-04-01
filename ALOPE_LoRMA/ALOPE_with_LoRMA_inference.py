@@ -26,7 +26,7 @@ from transformer_heads.util.helpers import get_model_params
 from transformer_heads.constants import model_type_map
 from safetensors.torch import load_file
 
-# PATCHES (Must be applied before loading model)
+
 
 # Patch 1: Fix crash in transformer_heads (EosTokenCriteria)
 if not hasattr(sc_mod, "EosTokenCriteria"):
@@ -39,7 +39,6 @@ if not hasattr(sc_mod, "EosTokenCriteria"):
             return bool((last_tokens == self.eos_token_id).any())
     sc_mod.EosTokenCriteria = EosTokenCriteria
 
-# Patch 2: Fix dataset loading errors
 try:
     import fsspec.compression as comp
     filesystems = getattr(comp, "filesystems", {})
@@ -53,7 +52,6 @@ try:
 except Exception:
     pass
 
-# Patch 3: Fix hardware checks
 if not hasattr(t_utils, "is_torch_mlu_available"):
     t_utils.is_torch_mlu_available = lambda: False
 if not hasattr(pt_utils, "is_torch_greater_or_equal_than_2_3"):
@@ -61,7 +59,6 @@ if not hasattr(pt_utils, "is_torch_greater_or_equal_than_2_3"):
 if not hasattr(t_utils, "XLA_FSDPV2_MIN_VERSION"):
     t_utils.XLA_FSDPV2_MIN_VERSION = "0.0.0"
 
-# Patch 4: Llama3 rope_scaling
 if not getattr(LlamaConfig, "_qe_rope_patched", False):
     LlamaConfig._qe_orig_rope_scaling_validation = getattr(LlamaConfig, "_rope_scaling_validation", None)
     def _patched_rope_validation(self):
@@ -78,7 +75,6 @@ if not getattr(LlamaConfig, "_qe_rope_patched", False):
     LlamaConfig._rope_scaling_validation = _patched_rope_validation
     LlamaConfig._qe_rope_patched = True
 
-# Patch 5: Force eager attention for HeadedModel
 if not getattr(HFPreTrainedModel, "_qe_attn_patched", False):
     _orig_check_and_enable_sdpa = HFPreTrainedModel._check_and_enable_sdpa.__func__
     def _patched_check_and_enable_sdpa(cls, config, hard_check_only: bool = False):
@@ -88,8 +84,6 @@ if not getattr(HFPreTrainedModel, "_qe_attn_patched", False):
         return _orig_check_and_enable_sdpa(cls, config, hard_check_only=hard_check_only)
     HFPreTrainedModel._check_and_enable_sdpa = classmethod(_patched_check_and_enable_sdpa)
     HFPreTrainedModel._qe_attn_patched = True
-
-# LoRMA DEFINITIONS (Must match training script exactly)
 
 @dataclass
 class LoRMAArguments:
@@ -163,7 +157,6 @@ def apply_lorma(model, lorma_args):
         parent.__setattr__(target_name, lorma_target)
     return model
 
-# CONFIGURATION
 
 MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
 TRAINED_MODEL_PATH = "./tourism_domain_lorma_l1_fnl12832_second/lorma_model"
@@ -179,7 +172,6 @@ TEST_SETS = {
 BATCH_SIZE = 8
 MAX_LENGTH = 256
 
-# MODEL RECONSTRUCTION
 
 model_type_map["meta-llama"] = ("model", LlamaForCausalLM)
 model_params = get_model_params(MODEL_NAME)
@@ -238,9 +230,6 @@ model.heads = nn.ModuleDict(heads)
 model.lm_head = None
 
 
-# LOAD TRAINED WEIGHTS
-
-
 print(f"Loading weights from {TRAINED_MODEL_PATH}...")
 state_dict = {}
 index_file = os.path.join(TRAINED_MODEL_PATH, "model.safetensors.index.json")
@@ -263,8 +252,6 @@ print("Applying state dict to model...")
 model.load_state_dict(state_dict, strict=False)
 model.eval()
 
-
-# INFERENCE LOOP
 
 print(f"Loading tokenizer from {MODEL_NAME}...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
@@ -364,7 +351,6 @@ for lp, url in TEST_SETS.items():
     pd.DataFrame({"ground_truth": gts, "prediction": preds}).to_csv(per_lp_csv, index=False)
     print(f"[{lp}] N={len(gts)}  pearson={pear:.6f}  spearman={spea:.6f}  -> {per_lp_csv}")
 
-# SUMMARY
 
 summary_df = pd.DataFrame(all_rows, columns=["language","pearson","spearman"])
 print("\nCorrelation Summary:")

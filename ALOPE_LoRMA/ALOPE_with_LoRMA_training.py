@@ -33,9 +33,6 @@ from transformer_heads.util.model import print_trainable_parameters
 from transformer_heads.constants import model_type_map
 
 
-# SYSTEM PATCHES (Critical for Stability)
-
-# Patch 1: Fix crash in transformer_heads (EosTokenCriteria)
 if not hasattr(sc_mod, "EosTokenCriteria"):
     from transformers.generation.stopping_criteria import StoppingCriteria
     class EosTokenCriteria(StoppingCriteria):
@@ -46,7 +43,7 @@ if not hasattr(sc_mod, "EosTokenCriteria"):
             return bool((last_tokens == self.eos_token_id).any())
     sc_mod.EosTokenCriteria = EosTokenCriteria
 
-# Patch 2: Fix dataset loading errors (fsspec compression)
+
 try:
     import fsspec.compression as comp
     filesystems = getattr(comp, "filesystems", {})
@@ -60,7 +57,6 @@ try:
 except Exception:
     pass
 
-# Patch 3: Fix hardware checks
 if not hasattr(t_utils, "is_torch_mlu_available"):
     t_utils.is_torch_mlu_available = lambda: False
 if not hasattr(pt_utils, "is_torch_greater_or_equal_than_2_3"):
@@ -68,7 +64,7 @@ if not hasattr(pt_utils, "is_torch_greater_or_equal_than_2_3"):
 if not hasattr(t_utils, "XLA_FSDPV2_MIN_VERSION"):
     t_utils.XLA_FSDPV2_MIN_VERSION = "0.0.0"
 
-# Patch 4: Llama3 rope_scaling validation
+
 if not getattr(LlamaConfig, "_qe_rope_patched", False):
     LlamaConfig._qe_orig_rope_scaling_validation = getattr(LlamaConfig, "_rope_scaling_validation", None)
     def _patched_rope_validation(self):
@@ -85,7 +81,7 @@ if not getattr(LlamaConfig, "_qe_rope_patched", False):
     LlamaConfig._rope_scaling_validation = _patched_rope_validation
     LlamaConfig._qe_rope_patched = True
 
-# Patch 5: Force eager attention for HeadedModel
+
 if not getattr(HFPreTrainedModel, "_qe_attn_patched", False):
     _orig_check_and_enable_sdpa = HFPreTrainedModel._check_and_enable_sdpa.__func__
     def _patched_check_and_enable_sdpa(cls, config, hard_check_only: bool = False):
@@ -96,7 +92,6 @@ if not getattr(HFPreTrainedModel, "_qe_attn_patched", False):
     HFPreTrainedModel._check_and_enable_sdpa = classmethod(_patched_check_and_enable_sdpa)
     HFPreTrainedModel._qe_attn_patched = True
 
-# Patch 6: Enable Gradient Checkpointing for HeadedModel
 if not getattr(HeadedModel, "_qe_gc_patched", False):
     def _headedmodel_gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         if hasattr(self, "model") and hasattr(self.model, "gradient_checkpointing_enable"):
@@ -109,8 +104,6 @@ if not getattr(HeadedModel, "_qe_gc_patched", False):
     HeadedModel.gradient_checkpointing_enable = _headedmodel_gradient_checkpointing_enable
     HeadedModel.gradient_checkpointing_disable = _headedmodel_gradient_checkpointing_disable
     HeadedModel._qe_gc_patched = True
-
-# LoRMA IMPLEMENTATION
 
 @dataclass
 class LoRMAArguments:
@@ -205,7 +198,6 @@ def mark_only_lora_as_trainable(model: nn.Module, bias: str = 'none') -> None:
             if 'bias' in n:
                 p.requires_grad = True
 
-# CONFIGURATION
 
 MODEL_NAME = "meta-llama/Llama-3.2-3B-Instruct"
 PER_DEVICE_TRAIN_BATCH = 32
@@ -226,7 +218,6 @@ TRAIN_FILES = {
     "en-telugu":  "data/train.en-te.tsv",
 }
 
-# SETUP MODEL & TOKENIZER
 
 model_type_map["meta-llama"] = ("model", LlamaForCausalLM)
 model_params = get_model_params(MODEL_NAME)
@@ -252,7 +243,6 @@ if tokenizer.pad_token_id is None:
     tokenizer.pad_token = tokenizer.eos_token
 tokenizer.model_max_length = MAX_LENGTH
 
-# DATASET PREPARATION
 
 def load_and_prepare_datasets(files):
     datasets = []
@@ -287,8 +277,6 @@ def processing_fn(examples):
 
 train_ds = train_ds.map(processing_fn, batched=True, num_proc=NUM_PROC)
 train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "mean_regression"])
-
-# BUILD AND WRAP MODEL
 
 
 print("Loading base model...")
@@ -345,7 +333,6 @@ for name, param in model.named_parameters():
 
 print_trainable_parameters(model)
 
-# TRAINER & COLLATOR
 
 base_collator = DataCollatorWithPadding(tokenizer=tokenizer, padding=True, return_tensors="pt")
 
@@ -381,10 +368,8 @@ class RegressionTrainer(Trainer):
         outputs = model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"])
         head = outputs.preds_by_head["mean_regression"]
         
-        # Squeeze logic
         if head.dim() == 3 and head.size(-1) == 1: head = head.squeeze(-1)
         
-        # Pooling logic (Weighted Mean)
         if head.dim() == 2:
             mask = inputs["attention_mask"].float()
             yhat = (head * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
