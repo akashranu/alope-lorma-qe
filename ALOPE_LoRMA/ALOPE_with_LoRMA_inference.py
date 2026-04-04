@@ -25,10 +25,10 @@ from transformer_heads.config import HeadConfig
 from transformer_heads.util.helpers import get_model_params
 from transformer_heads.constants import model_type_map
 from safetensors.torch import load_file
+from transformers.generation.stopping_criteria import StoppingCriteria
 
 
 if not hasattr(sc_mod, "EosTokenCriteria"):
-    from transformers.generation.stopping_criteria import StoppingCriteria
     class EosTokenCriteria(StoppingCriteria):
         def __init__(self, eos_token_id):
             self.eos_token_id = eos_token_id
@@ -190,7 +190,6 @@ head_configs = [
     ),
 ]
 
-print("Loading base model...")
 base_model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     quantization_config=None,
@@ -208,10 +207,8 @@ lorma_args = LoRMAArguments(
     lorma_dropout=0.05
 )
 
-print("Injecting LoRMA adapters...")
 base_model = apply_lorma(base_model, lorma_args)
 
-print("Wrapping with HeadedModel...")
 model = HeadedModel(base_model.config, head_configs)
 model.model = base_model
 model.head_configs = {hc.name: hc for hc in head_configs}
@@ -228,7 +225,7 @@ model.heads = nn.ModuleDict(heads)
 model.lm_head = None
 
 
-print(f"Loading weights from {TRAINED_MODEL_PATH}...")
+print(f"THE MODEL: {TRAINED_MODEL_PATH}...")
 state_dict = {}
 index_file = os.path.join(TRAINED_MODEL_PATH, "model.safetensors.index.json")
 single_file = os.path.join(TRAINED_MODEL_PATH, "model.safetensors")
@@ -246,7 +243,6 @@ elif os.path.exists(bin_file):
 else:
     raise FileNotFoundError(f"No model weights found in {TRAINED_MODEL_PATH}")
 
-print("Applying state dict to model...")
 model.load_state_dict(state_dict, strict=False)
 model.eval()
 

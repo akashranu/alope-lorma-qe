@@ -279,10 +279,8 @@ train_ds = train_ds.map(processing_fn, batched=True, num_proc=NUM_PROC)
 train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "mean_regression"])
 
 
-print("Loading base model...")
 base_model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    quantization_config=None,
     device_map="auto",
     trust_remote_code=True,
     torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
@@ -297,10 +295,8 @@ lorma_args = LoRMAArguments(
     lorma_dropout=0.05
 )
 
-print("Injecting LoRMA adapters...")
 base_model = apply_lorma(base_model, lorma_args)
 
-print("Wrapping with HeadedModel...")
 model = HeadedModel(base_model.config, head_configs)
 model.model = base_model
 model.head_configs = {hc.name: hc for hc in head_configs}
@@ -325,7 +321,6 @@ if GRADIENT_CHECKPOINTING:
             output.requires_grad_(True)
         base_model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-print("Configuring trainable parameters...")
 mark_only_lora_as_trainable(model, bias="none")
 for name, param in model.named_parameters():
     if "heads" in name:
@@ -345,17 +340,16 @@ class RegressionTrainer(Trainer):
     """Custom Trainer for correct regression loss with pooling and optimizer grouping"""
     def create_optimizer(self):
         if self.optimizer is None:
-            lorma_params, head_params, other_params = [], [], []
+            lorma_params, head_params = [], []
             for name, param in self.model.named_parameters():
                 if not param.requires_grad: continue
                 if "lora_" in name: lorma_params.append(param)
                 elif name.startswith("heads."): head_params.append(param)
-                else: other_params.append(param)
+                
             
             optimizer_grouped_parameters = []
             if lorma_params: optimizer_grouped_parameters.append({"params": lorma_params, "lr": self.args.learning_rate})
             if head_params: optimizer_grouped_parameters.append({"params": head_params, "lr": self.args.learning_rate})
-            if other_params: optimizer_grouped_parameters.append({"params": other_params, "lr": self.args.learning_rate})
             
             self.optimizer = torch.optim.AdamW(
                 optimizer_grouped_parameters, 
@@ -396,7 +390,6 @@ args = TrainingArguments(
     lr_scheduler_type="cosine",
     warmup_ratio=WARMUP_RATIO,
     gradient_checkpointing=GRADIENT_CHECKPOINTING,
-    ddp_find_unused_parameters=False,
     save_total_limit=1,
     bf16=torch.cuda.is_available(),
 )
@@ -408,7 +401,7 @@ trainer = RegressionTrainer(
     data_collator=collate,
 )
 
-print("Starting training...")
+print("TRAINING HERE")
 trainer.train()
 
 save_dir = os.path.join(OUTPUT_DIR, "lorma_model")
